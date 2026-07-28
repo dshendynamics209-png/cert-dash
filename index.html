@@ -358,7 +358,7 @@ body { font-family: var(--font); background: var(--navy); color: var(--text); di
 <div class="page active" id="page-today">
   <div class="page-title">Today's sessions</div>
   <div class="page-sub" id="today-subtitle">Your study schedule for the week</div>
-  <div class="ei-bar"><span class="ei-label">Your progress is saved in your browser — back it up so it's never lost</span><button class="ei-btn primary" onclick="exportData()">⬇ Export backup</button><button class="ei-btn" onclick="importData()">⬆ Restore backup</button></div>
+  <div class="ei-bar"><span class="ei-label">Your progress is saved in your browser — back it up so it's never lost</span><button class="ei-btn primary" onclick="exportData()">⬇ Export backup</button><button class="ei-btn" onclick="importData()">⬆ Restore backup</button><button class="ei-btn" id="as-btn" onclick="handleAutoSaveBtn()" style="margin-left:8px">🔗 Connect auto-save</button><span id="as-status" style="margin-left:8px;font-size:0.78rem;opacity:0.7"></span></div>
   <div id="today-progress-strip"></div>
   <div class="today-grid" id="today-grid"></div>
   <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;">
@@ -1045,14 +1045,14 @@ let done={};
 try{done=JSON.parse(localStorage.getItem('cert_dash_v1')||'{}');}catch(e){}
 let cFil='all',sFil='all';
 const ALL=[...CR,...SP];
-function save(){try{localStorage.setItem('cert_dash_v1',JSON.stringify(done));}catch(e){}}
+function save(){try{localStorage.setItem('cert_dash_v1',JSON.stringify(done));}catch(e){} scheduleAutoSave();}
 function tog(id){
   done[id]=!done[id];save();updateAll();
   if(done[id]){var s=ALL.find(function(x){return x.id===id;});if(s)showQuizModal(s);}
 }
 let checks={};
 try{checks=JSON.parse(localStorage.getItem('cert_checks_v1')||'{}');}catch(e){}
-function saveChecks(){try{localStorage.setItem('cert_checks_v1',JSON.stringify(checks));}catch(e){}}
+function saveChecks(){try{localStorage.setItem('cert_checks_v1',JSON.stringify(checks));}catch(e){} scheduleAutoSave();}
 function itemSlug(text){return text.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
 function togItem(sid,key){if(!checks[sid])checks[sid]={};checks[sid][key]=!checks[sid][key];saveChecks();updateAll();}
 
@@ -1441,7 +1441,7 @@ function nav(p){
 // ── LOCAL FILES ───────────────────────────────────────────────────────────────
 let localFiles=[];
 try{localFiles=JSON.parse(localStorage.getItem('local_files')||'[]');}catch(e){}
-function saveLocalFiles(){try{localStorage.setItem('local_files',JSON.stringify(localFiles));}catch(e){}}
+function saveLocalFiles(){try{localStorage.setItem('local_files',JSON.stringify(localFiles));}catch(e){} scheduleAutoSave();}
 function addLocalFile(){
   const name=document.getElementById('lf-name').value.trim();
   const path=document.getElementById('lf-path').value.trim();
@@ -1493,7 +1493,7 @@ let diagScores={};
 try{diagScores=JSON.parse(localStorage.getItem('cert_diag_v1')||'{}');}catch(e){}
 let diagHistory=[];
 try{diagHistory=JSON.parse(localStorage.getItem('cert_diag_history_v1')||'[]');}catch(e){}
-function saveHistory(){try{localStorage.setItem('cert_diag_history_v1',JSON.stringify(diagHistory));}catch(e){}}
+function saveHistory(){try{localStorage.setItem('cert_diag_history_v1',JSON.stringify(diagHistory));}catch(e){} scheduleAutoSave();}
 
 function getWeakDomains(){
   const criscN=parseInt(diagScores['crisc_overall']);
@@ -1501,7 +1501,7 @@ function getWeakDomains(){
   const secWeak=SEC_DD.filter(d=>{const n=parseInt(diagScores[d.id]);return !isNaN(n)&&n<3;}).map(d=>d.id.replace(/d$/,''));
   return {criscWeak, secWeak};
 }
-function saveDiag(){try{localStorage.setItem('cert_diag_v1',JSON.stringify(diagScores));}catch(e){}}
+function saveDiag(){try{localStorage.setItem('cert_diag_v1',JSON.stringify(diagScores));}catch(e){} scheduleAutoSave();}
 
 function scoreColor(n,max){
   const p=n/max;
@@ -1931,7 +1931,7 @@ var QP_FALLBACK = [
 // ── QUIZ MODAL ───────────────────────────────────────────────────────────────
 var quizResults = {};
 try { quizResults = JSON.parse(localStorage.getItem('cert_quiz_v1') || '{}'); } catch(e) {}
-function saveQuizResults() { try { localStorage.setItem('cert_quiz_v1', JSON.stringify(quizResults)); } catch(e) {} }
+function saveQuizResults() { try { localStorage.setItem('cert_quiz_v1', JSON.stringify(quizResults)); } catch(e) {} scheduleAutoSave(); }
 
 function getPrompts(dom) {
   var pool = QP[dom] || QP_FALLBACK;
@@ -2122,6 +2122,159 @@ document.addEventListener('change',function(e){
     saveDiag();renderDiagnostic();return;
   }
 });
+
+// ── AUTO-SAVE (File System Access API + IndexedDB) ───────────────────────────
+(function(){
+  var DB_NAME='cert_dash_fs', STORE='handles', HANDLE_KEY='autoSave';
+  var _timer=null, _handle=null, _status='disconnected';
+
+  function openDB(){
+    return new Promise(function(res,rej){
+      var r=indexedDB.open(DB_NAME,1);
+      r.onupgradeneeded=function(e){e.target.result.createObjectStore(STORE);};
+      r.onsuccess=function(e){res(e.target.result);};
+      r.onerror=rej;
+    });
+  }
+  function dbGet(){
+    return openDB().then(function(db){
+      return new Promise(function(res){
+        var tx=db.transaction(STORE,'readonly');
+        var req=tx.objectStore(STORE).get(HANDLE_KEY);
+        req.onsuccess=function(e){res(e.target.result||null);};
+        req.onerror=function(){res(null);};
+      });
+    }).catch(function(){return null;});
+  }
+  function dbSet(handle){
+    return openDB().then(function(db){
+      return new Promise(function(res){
+        var tx=db.transaction(STORE,'readwrite');
+        tx.objectStore(STORE).put(handle,HANDLE_KEY);
+        tx.oncomplete=res;
+      });
+    }).catch(function(){});
+  }
+
+  function setStatus(s,msg){
+    _status=s;
+    var btn=document.getElementById('as-btn');
+    var lbl=document.getElementById('as-status');
+    if(s==='connected'){
+      if(btn){btn.textContent='✅ Auto-save on';btn.onclick=disconnectAutoSave;}
+      if(lbl)lbl.textContent=msg||'Connected';
+    } else if(s==='needs-permission'){
+      if(btn){btn.textContent='🔄 Reconnect';btn.onclick=handleAutoSaveBtn;}
+      if(lbl)lbl.textContent='Click to restore permission';
+    } else if(s==='saving'){
+      if(lbl)lbl.textContent='💾 Saving…';
+    } else if(s==='saved'){
+      if(btn){btn.textContent='✅ Auto-save on';btn.onclick=disconnectAutoSave;}
+      if(lbl)lbl.textContent='Saved '+new Date().toLocaleTimeString();
+    } else if(s==='error'){
+      if(btn){btn.textContent='⚠ Auto-save error';btn.onclick=handleAutoSaveBtn;}
+      if(lbl)lbl.textContent='Permission lost — click to reconnect';
+    } else {
+      if(btn){btn.textContent='🔗 Connect auto-save';btn.onclick=handleAutoSaveBtn;}
+      if(lbl)lbl.textContent='';
+    }
+  }
+
+  function buildPayload(){
+    return {v:2,ts:new Date().toISOString(),
+      sessions:typeof done!=='undefined'?done:{},
+      checks:typeof checks!=='undefined'?checks:{},
+      diag:typeof diagScores!=='undefined'?diagScores:{},
+      diagHistory:typeof diagHistory!=='undefined'?diagHistory:[],
+      localFiles:typeof localFiles!=='undefined'?localFiles:[],
+      quiz:typeof quizResults!=='undefined'?quizResults:{}};
+  }
+
+  async function writeFile(){
+    if(!_handle)return;
+    try{
+      var perm=await _handle.requestPermission({mode:'readwrite'});
+      if(perm!=='granted'){setStatus('error');return;}
+      var w=await _handle.createWritable();
+      await w.write(JSON.stringify(buildPayload(),null,2));
+      await w.close();
+      setStatus('saved');
+    }catch(e){
+      if(e.name!=='AbortError')setStatus('error');
+    }
+  }
+
+  window.scheduleAutoSave=function(){
+    if(!_handle)return;
+    clearTimeout(_timer);
+    _timer=setTimeout(writeFile,2000);
+  };
+
+  window.handleAutoSaveBtn=async function(){
+    if(!window.showSaveFilePicker){
+      alert('Auto-save requires Chrome or Edge. Use Export backup instead.');return;
+    }
+    try{
+      var h=await window.showSaveFilePicker({
+        suggestedName:'cert-dashboard-progress.json',
+        types:[{description:'JSON progress file',accept:{'application/json':['.json']}}]
+      });
+      _handle=h;
+      await dbSet(h);
+      await writeFile();
+    }catch(e){
+      if(e.name!=='AbortError')alert('Could not connect save file: '+e.message);
+    }
+  };
+
+  window.disconnectAutoSave=function(){
+    _handle=null;
+    openDB().then(function(db){
+      var tx=db.transaction(STORE,'readwrite');
+      tx.objectStore(STORE).delete(HANDLE_KEY);
+    }).catch(function(){});
+    setStatus('disconnected');
+  };
+
+  // On load: restore from saved handle if permission already granted
+  async function initAutoSave(){
+    if(!window.showSaveFilePicker)return; // unsupported browser
+    var h=await dbGet();
+    if(!h)return;
+    try{
+      var perm=await h.queryPermission({mode:'readwrite'});
+      if(perm==='granted'){
+        _handle=h;
+        // Restore progress from file
+        var file=await h.getFile();
+        var text=await file.text();
+        var data=JSON.parse(text);
+        if(data.sessions&&Object.keys(data.sessions).length){
+          if(data.sessions) { done=data.sessions; localStorage.setItem('cert_dash_v1',JSON.stringify(done)); }
+          if(data.checks)   { checks=data.checks; localStorage.setItem('cert_checks_v1',JSON.stringify(checks)); }
+          if(data.diag)     { diagScores=data.diag; localStorage.setItem('cert_diag_v1',JSON.stringify(diagScores)); }
+          if(data.diagHistory){ diagHistory=data.diagHistory; localStorage.setItem('cert_diag_history_v1',JSON.stringify(diagHistory)); }
+          if(data.localFiles) { localFiles=data.localFiles; localStorage.setItem('local_files',JSON.stringify(localFiles)); }
+          if(data.quiz)     { quizResults=data.quiz; localStorage.setItem('cert_quiz_v1',JSON.stringify(quizResults)); }
+          if(typeof updateAll==='function')updateAll();
+        }
+        setStatus('connected','Restored from file');
+      } else {
+        _handle=h; // keep handle ready for when user clicks
+        setStatus('needs-permission');
+      }
+    }catch(e){
+      setStatus('error');
+    }
+  }
+
+  // Run after page scripts initialize
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',function(){setTimeout(initAutoSave,500);});
+  } else {
+    setTimeout(initAutoSave,500);
+  }
+})();
 </script>
 </body>
 </html>
