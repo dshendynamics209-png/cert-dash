@@ -1054,6 +1054,22 @@ let checks={};
 try{checks=JSON.parse(localStorage.getItem('cert_checks_v1')||'{}');}catch(e){}
 function saveChecks(){try{localStorage.setItem('cert_checks_v1',JSON.stringify(checks));}catch(e){} scheduleAutoSave();}
 function itemSlug(text){return text.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+function showLocalOnlyToast(){
+  var t=document.getElementById('_local-toast');
+  if(!t){
+    t=document.createElement('div');t.id='_local-toast';
+    t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a3a;color:#aabbff;border:1px solid #3344aa;border-radius:8px;padding:10px 20px;font-size:13px;z-index:9999;pointer-events:none;transition:opacity 0.3s;white-space:nowrap;';
+    t.textContent='📁 Local file — open the dashboard from your computer to access this PDF';
+    document.body.appendChild(t);
+  }
+  t.style.opacity='1';t.style.display='block';
+  clearTimeout(window._ltTimer);
+  window._ltTimer=setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.style.display='none';},300);},3500);
+}
+function clickLink(event,url){
+  if(url.startsWith('file:///') && location.protocol==='https:'){event.preventDefault();showLocalOnlyToast();}
+  event.stopPropagation();
+}
 function togItem(sid,key){if(!checks[sid])checks[sid]={};checks[sid][key]=!checks[sid][key];saveChecks();updateAll();}
 
 // ── PROGRESS STRIP ───────────────────────────────────────────────────────────
@@ -1346,7 +1362,7 @@ function sessHTML(s,isCRISC){
   const matHtml=s.mat&&s.mat.length
     ?`<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px;">${s.mat.map(m=>
         m.url
-          ?`<a href="${m.url}" target="_blank" onclick="event.stopPropagation();" style="font-size:10px;color:${s.c};background:${s.bg};border:1px solid ${s.c}44;border-radius:4px;padding:2px 8px;text-decoration:none;white-space:nowrap;">${m.label}</a>`
+          ?`<a href="${m.url}" target="_blank" onclick="clickLink(event,'${m.url}');" style="font-size:10px;color:${s.c};background:${s.bg};border:1px solid ${s.c}44;border-radius:4px;padding:2px 8px;text-decoration:none;white-space:nowrap;">${m.label}</a>`
           :`<span style="font-size:10px;color:var(--text-3);padding:2px 0;">${m.label}</span>`
       ).join('')}</div>`
     :'';
@@ -1361,7 +1377,7 @@ function sessHTML(s,isCRISC){
         const ck=checks[s.id]&&checks[s.id][key];
         const tUrl=getItemUrl(idx);
         const linkBtn=tUrl
-          ?`<a href="${tUrl}" target="_blank" onclick="event.stopPropagation();" style="color:${s.c};font-size:10px;text-decoration:none;" title="${item}">↗</a>`
+          ?`<a href="${tUrl}" target="_blank" onclick="clickLink(event,'${tUrl}');" style="color:${s.c};font-size:10px;text-decoration:none;" title="${item}">↗</a>`
           :'';
         return `<span style="display:inline-flex;align-items:center;gap:3px;">`+
           `<input type="checkbox" ${ck?'checked':''} style="width:10px;height:10px;accent-color:${s.c};cursor:pointer;" onclick="event.stopPropagation();" onchange="event.stopPropagation();togItem('${s.id}','${key}');">`+
@@ -1379,7 +1395,7 @@ function sessHTML(s,isCRISC){
     <span><span class="sess-title">${s.t}</span>${weakBadge}<br>
       ${s.topics&&s.topics.length
         ?s.topics.map(tp=>tp.url
-          ?`<a href="${tp.url}" target="_blank" onclick="event.stopPropagation();" style="color:var(--text-2);text-decoration:underline;text-decoration-style:dotted;font-size:11px;">${tp.label}</a>`
+          ?`<a href="${tp.url}" target="_blank" onclick="clickLink(event,'${tp.url}');" style="color:var(--text-2);text-decoration:underline;text-decoration-style:dotted;font-size:11px;">${tp.label}</a>`
           :`<span style="color:var(--text-2);font-size:11px;">${tp.label}</span>`
         ).join('<span style="color:var(--text-3);font-size:11px;"> · </span>')
         :''
