@@ -1067,8 +1067,10 @@ function showLocalOnlyToast(){
   window._ltTimer=setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.style.display='none';},300);},3500);
 }
 function clickLink(event,url){
-  if(url.startsWith('file:///') && location.protocol==='https:'){event.preventDefault();showLocalOnlyToast();}
+  event.preventDefault();
   event.stopPropagation();
+  if(url.startsWith('file:///') && location.protocol==='https:'){showLocalOnlyToast();}
+  else if(url){window.open(url,'_blank','noopener,noreferrer');}
 }
 function togItem(sid,key){if(!checks[sid])checks[sid]={};checks[sid][key]=!checks[sid][key];saveChecks();updateAll();}
 
